@@ -106,8 +106,8 @@
     background: rgba(238,232,237,.95);
     box-shadow: 0 6px 16px rgba(83,43,73,.13);
     z-index: 9999;
-    transition: left .42s cubic-bezier(.2,.8,.2,1), top .42s cubic-bezier(.2,.8,.2,1),
-                transform .42s cubic-bezier(.2,.8,.2,1);
+    transition: left .22s cubic-bezier(.18,.9,.25,1), top .22s cubic-bezier(.18,.9,.25,1),
+                transform .22s cubic-bezier(.18,.9,.25,1);
   }
 
   .credit {
@@ -220,7 +220,7 @@
   <section class="question" id="question">
     <div class="badge">💌</div>
     <h1>Quer sair comigo?</h1>
-    <p class="subtitle">Tenho uma pergunta importante para fazer…<br>e espero muito que a resposta seja <b>sim</b>. ❤️</p>
+    <p class="subtitle">Prometo que vai ser divertido🙏</p>
 
     <div class="buttons" id="arena">
       <button id="yes">Sim! 😍</button>
@@ -282,15 +282,13 @@
     if (success.classList.contains('show')) return;
 
     const now = performance.now();
-    if (!force && now - lastMoveAt < 260) return;
+    if (!force && now - lastMoveAt < 140) return;
     lastMoveAt = now;
 
     const b = no.getBoundingClientRect();
     const width = b.width;
     const height = b.height;
 
-    // Guarda a posição inicial para evitar que o botão vá "viajando"
-    // para um canto da tela depois de vários movimentos.
     if (!startPoint) {
       startPoint = {
         x: b.left + width / 2,
@@ -299,8 +297,8 @@
     }
 
     if (!noEscaped) {
-      // Retira o botão do card: assim ele nunca fica preso/clipped pelo
-      // backdrop-filter ou por qualquer stacking/containing block do card.
+      // Depois do primeiro movimento, o botão passa a usar a janela inteira
+      // como área de fuga, evitando ficar preso dentro do cartão.
       document.body.appendChild(no);
       noEscaped = true;
       no.style.position = 'fixed';
@@ -315,23 +313,32 @@
     const oldY = current.top + current.height / 2;
     const screenMin = Math.min(window.innerWidth, window.innerHeight);
 
-    // Fuga curta: sempre perceptível, mas nunca um teletransporte para
-    // o outro lado da tela.
-    const minDistance = Math.max(62, Math.min(82, screenMin * 0.13));
-    const maxDistance = Math.max(minDistance + 18,
-                                Math.min(145, screenMin * 0.27));
+    // Agora a fuga é maior: o botão precisa realmente sair da região anterior.
+    // Os valores se adaptam a telas pequenas para nunca ultrapassar a viewport.
+    const minDistance = Math.max(105, Math.min(145, screenMin * 0.20));
+    const maxDistance = Math.max(minDistance + 35,
+                                 Math.min(285, screenMin * 0.48));
 
-    const safeStart = keepNoInsideViewport(
-      startPoint.x, startPoint.y, current.width, current.height
-    );
+    const yesRect = yes.getBoundingClientRect();
+    const yesGap = 22;
+
+    function overlapsYes(x, y) {
+      const left = x - current.width / 2;
+      const right = x + current.width / 2;
+      const top = y - current.height / 2;
+      const bottom = y + current.height / 2;
+
+      return !(
+        right < yesRect.left - yesGap ||
+        left > yesRect.right + yesGap ||
+        bottom < yesRect.top - yesGap ||
+        top > yesRect.bottom + yesGap
+      );
+    }
 
     let best = null;
-    const preferredCenter = {
-      x: (safeStart.x + window.innerWidth / 2) / 2,
-      y: (safeStart.y + window.innerHeight / 2) / 2
-    };
 
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 220; i++) {
       const angle = Math.random() * Math.PI * 2;
       const distance = minDistance + Math.random() * (maxDistance - minDistance);
 
@@ -343,37 +350,64 @@
       y = safe.y;
 
       const actualDistance = Math.hypot(x - oldX, y - oldY);
-      if (actualDistance < minDistance * 0.92) continue;
+      if (actualDistance < minDistance * 0.90) continue;
+      if (overlapsYes(x, y)) continue;
 
-      // Evita ficar acumulando movimentos sempre para a mesma direção.
-      const centerDistance = Math.hypot(
-        x - preferredCenter.x, y - preferredCenter.y
+      // Prefere deslocamentos realmente grandes, mas evita um padrão previsível.
+      const distanceScore = Math.abs(actualDistance - maxDistance * 0.82);
+      const edgePenalty = Math.min(
+        x - current.width / 2,
+        window.innerWidth - (x + current.width / 2),
+        y - current.height / 2,
+        window.innerHeight - (y + current.height / 2)
       );
 
-      const score = Math.abs(
-        actualDistance - (minDistance + maxDistance) / 2
-      ) + centerDistance * 0.10;
+      const score = distanceScore - Math.min(edgePenalty, 45) * 0.08;
 
       if (!best || score < best.score) {
         best = { x, y, score };
       }
     }
 
-    // Fallback extremamente conservador: mesmo se a tela for pequena,
-    // o botão continua inteiro dentro da área visível.
+    // Em telas muito pequenas, procura novamente apenas uma posição segura
+    // e que continue sem tocar no botão "Sim".
     if (!best) {
-      best = keepNoInsideViewport(
-        oldX + minDistance,
-        oldY,
-        current.width,
-        current.height
-      );
+      for (let i = 0; i < 160; i++) {
+        const x = 18 + Math.random() * Math.max(1, window.innerWidth - 36);
+        const y = 78 + Math.random() * Math.max(1, window.innerHeight - 154);
+        const safe = keepNoInsideViewport(x, y, current.width, current.height);
+        if (!overlapsYes(safe.x, safe.y) &&
+            Math.hypot(safe.x - oldX, safe.y - oldY) >= Math.min(95, minDistance)) {
+          best = { x: safe.x, y: safe.y, score: 0 };
+          break;
+        }
+      }
     }
 
-    no.style.left = `${best.x}px`;
-    no.style.top = `${best.y}px`;
-    no.style.transform = 'translate(-50%, -50%)';
-    escaped++;
+    // Último recurso: posição segura, sem permitir sobreposição com "Sim".
+    if (!best) {
+      const candidates = [
+        { x: window.innerWidth * 0.18, y: window.innerHeight * 0.28 },
+        { x: window.innerWidth * 0.82, y: window.innerHeight * 0.28 },
+        { x: window.innerWidth * 0.18, y: window.innerHeight * 0.72 },
+        { x: window.innerWidth * 0.82, y: window.innerHeight * 0.72 }
+      ];
+
+      for (const candidate of candidates) {
+        const safe = keepNoInsideViewport(candidate.x, candidate.y, current.width, current.height);
+        if (!overlapsYes(safe.x, safe.y)) {
+          best = { x: safe.x, y: safe.y, score: 0 };
+          break;
+        }
+      }
+    }
+
+    if (best) {
+      no.style.left = `${best.x}px`;
+      no.style.top = `${best.y}px`;
+      no.style.transform = 'translate(-50%, -50%)';
+      escaped++;
+    }
   }
 
   function scheduleEscape() {
@@ -384,7 +418,7 @@
     escapeTimer = setTimeout(() => {
       moveNo(true);
       scheduleEscape();
-    }, 1700 + Math.random() * 1200);
+    }, 850 + Math.random() * 650);
   }
 
   window.addEventListener('resize', () => {
